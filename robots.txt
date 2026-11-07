@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://veloratv.app/sitemap.xml
