@@ -4,19 +4,27 @@
   "main": "worker/index.mjs",
   "compatibility_date": "2026-11-22",
   "compatibility_flags": ["nodejs_compat"],
-  "assets": { "directory": "./dist", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
   "d1_databases": [
-    { "binding": "DB", "database_name": "velora-purchases-test", "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_UUID" }
+    {
+      "binding": "DB",
+      "database_name": "velora-purchases-live",
+      "database_id": "ad8a4c75-97da-4104-aa1b-7778239f8d50"
+    }
   ],
   "vars": {
     "SITE_ORIGIN": "https://velora-website.cloudflare-mtoth.workers.dev",
-    "PAYMENTS_MODE": "test",
+    "PAYMENTS_MODE": "live",
     "PURCHASES_ENABLED": "false",
-    "LIVE_PAYMENTS_APPROVED": "false",
-    "STRIPE_ACCOUNT_ID": "acct_REPLACE_WITH_VELORA_ACCOUNT_ID",
-    "PLUS_PRODUCT_ID": "prod_REPLACE_WITH_TEST_PLUS_PRODUCT",
-    "PLUS_PRICE_ID": "price_REPLACE_WITH_TEST_PLUS_PRICE",
-    "THEME_PRODUCT_ID": "prod_REPLACE_WITH_TEST_THEME_PRODUCT",
-    "THEME_PRICE_ID": "price_REPLACE_WITH_TEST_THEME_PRICE"
+    "LIVE_PAYMENTS_APPROVED": "true",
+    "STRIPE_ACCOUNT_ID": "REPLACE_WITH_YOUR_STRIPE_ACCT_ID",
+    "PLUS_PRODUCT_ID": "prod_VfkR38nmjd6LZA",
+    "PLUS_PRICE_ID": "price_1UeOx3JF7LV4As9NyAsGzgni",
+    "THEME_PRODUCT_ID": "prod_VfkRl8aJoPcEYR",
+    "THEME_PRICE_ID": "price_1UeOwtJF7LV4As9NL4ioGgj6"
   }
 }
