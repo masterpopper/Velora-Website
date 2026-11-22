@@ -40,7 +40,7 @@ export async function handle(request,bindings) {
     const owner=await account(request,env);
     await rate(env,'account:'+owner.id,60,60);
     if(path==='/api/account' && request.method==='GET') {
-      const purchases=await env.DB.prepare('SELECT id,sku,state,reason,created_at FROM orders WHERE account_id=? ORDER BY created_at DESC LIMIT 25').bind(owner.id).all();
+      const purchases=await env.DB.prepare('SELECT id,sku,state,reason,mode,created_at FROM orders WHERE account_id=? ORDER BY created_at DESC LIMIT 25').bind(owner.id).all();
       const devices=await env.DB.prepare('SELECT id,created_at,expires_at FROM devices WHERE account_id=? AND revoked_at IS NULL AND expires_at>?').bind(owner.id,now()).all();
       return json({id:owner.id,login:owner.login,entitlements:await entitlements(env,owner.id),purchases:purchases.results,devices:devices.results,mode:env.PAYMENTS_MODE});
     }

@@ -13,6 +13,16 @@ async function api(path,method='GET',data) {
   if(!response.ok)throw new Error(messages[result.error]||'This action could not be completed. Check the private test configuration.');
   return result;
 }
+function updateDeliveries(){
+  const codes={plus:'656781',theme_pack:'557432'};
+  for(const sku of Object.keys(codes)){
+    const confirmed=!!owner?.purchases?.some(p=>p.sku===sku&&p.state==='active'&&p.mode===owner.mode);
+    const panel=$('#delivery-'+sku);
+    const value=$('#delivery-code-'+sku);
+    panel.hidden=!confirmed;
+    if(confirmed)value.textContent=codes[sku];
+  }
+}
 function updateButtons(){
   document.querySelectorAll('.purchase').forEach(button=>{
     const sku=button.dataset.sku,owned=!!owner?.entitlements[sku];
@@ -33,7 +43,7 @@ async function load(){
     $('#payment-banner').textContent=config.enabled?(config.mode==='live'?'One-time purchases · USD':'Test mode · No real money moves'):'Private preparation · Purchases are not enabled';
     $('#status').textContent=config.enabled?(config.mode==='live'?'Real purchases are enabled. Review the product and amount before paying.':'Test mode only. No real money will move.'):'Checkout is disabled in this private setup.';
     const returned=new URL(location.href).searchParams.get('checkout');
-    if(returned==='returned')$('#status').textContent+=' Checkout returned. Only webhook-verified purchases appear below; refresh if pending.';
+    if(returned==='returned')$('#status').textContent+=' Checkout returned. Your access code appears here after Stripe confirms payment; refresh if it is still pending.';
     $('#purchases').replaceChildren();$('#devices').replaceChildren();
     for(const purchase of owner?.purchases||[]){const li=document.createElement('li');li.textContent=(purchase.sku==='plus'?'Plus':'Theme Pack + Donation')+': '+purchase.state;$('#purchases').append(li);}
     for(const dev of owner?.devices||[]){const li=document.createElement('li');li.textContent='TV '+dev.id.slice(0,8);const button=document.createElement('button');button.className='secondary';button.textContent='Unlink';button.onclick=async()=>{try{await api('/devices/revoke','POST',{device_id:dev.id});await load();}catch(e){$('#status').textContent=e.message;}};li.append(button);$('#devices').append(li);}

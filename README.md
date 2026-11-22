@@ -26,3 +26,7 @@ Features include mobile navigation, an accessible full-interface dialog, keyboar
 Design draws on the supplied parky.watch reference for product clarity and installation structure, while preserving Velora branding. No third-party copy or artwork is used.
 
 No DNS, domain, live site, app code or APK release was changed. Public deployment to veloratv.app remains separate. Work is isolated in D:/Codex/VeloraTV.app.
+
+
+## Purchase code delivery
+The `/buy` page reveals the Theme Pack code `557432` or Plus code `656781` only when the signed-in account has a webhook-verified active order for that product in the current payment mode. These fixed codes are display-only delivery codes, not payment proof or API redemption credentials. The signed server-side entitlement remains authoritative. Refresh the account page if Stripe's webhook has not arrived yet.
