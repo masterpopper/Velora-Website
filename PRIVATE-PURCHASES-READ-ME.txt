@@ -1,0 +1,21 @@
+PRIVATE / NOT DEPLOYED / TEST-ONLY
+
+Start with docs/STRIPE-SETUP-GUIDE.md.
+Exact native contract: docs/APP-PURCHASES-CONTRACT.md.
+Current test result: 24 local tests passed; Cloudflare Functions bundle compiles.
+
+Do not drag these backend files into the old static GitHub repository without
+reviewing the actual Cloudflare project and the setup guide. A Git push to an
+auto-deploy branch could publish changes. No push/deployment is authorized here.
+
+Preserved website files are under dist/. Root functions/ and backend/ are SERVER
+code. Only dist/ is the static output. Keep package.json and pnpm-lock.yaml at
+repository root so dependencies and Pages Functions can be compiled.
+
+Live product/price IDs supplied by the owner are UNVERIFIED references only.
+They are NOT configured as test products. New Velora-only test products, account
+ID, OAuth settings, D1 binding, signing keys and encrypted host secrets are needed.
+Never paste secrets in chat. Revoke the previously disclosed live restricted key.
+
+No app source was edited. No app grant or production payment has been enabled.
+Source rights, Stripe eligibility and live-sale policies still need review.

@@ -1,0 +1,8 @@
+{
+  "status": "unverified owner-supplied LIVE references; DO NOT use in test environment",
+  "account_id": null,
+  "plus": {"product_id":"prod_VfkR38nmjd6LZA","price_id":"price_1UeOx3JF7LV4As9NyAsGzgni","amount":1000,"currency":"usd","type":"one_time"},
+  "theme_pack": {"display_label":"Theme Pack + Donation","product_id":"prod_VfkRl8aJoPcEYR","price_id":"price_1UeOwtJF7LV4As9NL4ioGgj6","amount":500,"currency":"usd","type":"one_time"},
+  "live_enabled": false,
+  "notes": ["No secret keys are stored here.","Account, products and prices have not been authenticated against Stripe.","A restricted live key was disclosed in another chat; revoke it in Stripe. Do not reuse it."]
+}
