@@ -3,11 +3,15 @@
   "name": "velora-website",
   "main": "worker/index.mjs",
   "compatibility_date": "2026-11-22",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": [
+      "/api/*"
+    ]
   },
   "d1_databases": [
     {
@@ -19,9 +23,9 @@
   "vars": {
     "SITE_ORIGIN": "https://velora-website.cloudflare-mtoth.workers.dev",
     "PAYMENTS_MODE": "live",
-    "PURCHASES_ENABLED": "false",
+    "PURCHASES_ENABLED": "true",
     "LIVE_PAYMENTS_APPROVED": "true",
-    "STRIPE_ACCOUNT_ID": "REPLACE_WITH_YOUR_STRIPE_ACCT_ID",
+    "STRIPE_ACCOUNT_ID": "acct_1UYWGWJF7LV4As9N",
     "PLUS_PRODUCT_ID": "prod_VfkR38nmjd6LZA",
     "PLUS_PRICE_ID": "price_1UeOx3JF7LV4As9NyAsGzgni",
     "THEME_PRODUCT_ID": "prod_VfkRl8aJoPcEYR",
