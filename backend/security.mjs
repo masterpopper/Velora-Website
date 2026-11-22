@@ -6,10 +6,6 @@ export async function hash(value) {
   const data = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(data), n => n.toString(16).padStart(2, '0')).join('');
 }
-export async function challenge(value) {
-  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
-  return btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
-}
 export class HttpError extends Error { constructor(status, code) { super(code); this.status = status; } }
 export function assert(condition, status, code) { if (!condition) throw new HttpError(status, code); }
 export function json(value, status = 200, extra = {}) {
@@ -18,10 +14,6 @@ export function json(value, status = 200, extra = {}) {
     'X-Content-Type-Options': 'nosniff', ...extra
   }});
 }
-export function cookie(request, name) {
-  return request.headers.get('cookie')?.split(';').map(x=>x.trim()).find(x=>x.startsWith(name+'='))?.slice(name.length+1) || '';
-}
-export const sessionCookie = (name, value, seconds) => `${name}=${value}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${seconds}`;
 export function origin(env) {
   const value = new URL(env.SITE_ORIGIN);
   assert(value.protocol === 'https:' && value.origin === env.SITE_ORIGIN, 503, 'invalid_site_origin');
@@ -54,18 +46,4 @@ export async function rate(env, key, max, seconds=60) {
   const result=await env.DB.prepare(`INSERT INTO rate_limits(key,hits,expires_at) VALUES(?,1,?)
     ON CONFLICT(key) DO UPDATE SET hits=hits+1 RETURNING hits`).bind(await hash(`${key}:${bucket}`),(bucket+2)*seconds).first();
   assert(result.hits<=max,429,'rate_limited');
-}
-export async function account(request, env) {
-  const raw=cookie(request,'__Host-valora_session');
-  assert(/^[a-f0-9]{64}$/.test(raw),401,'sign_in_required');
-  const row=await env.DB.prepare(`SELECT a.* FROM sessions s JOIN accounts a ON a.id=s.account_id
-    WHERE s.hash=? AND s.expires_at>?`).bind(await hash(raw),now()).first();
-  assert(row,401,'sign_in_required'); return row;
-}
-export async function device(request, env) {
-  const raw=request.headers.get('Authorization')?.replace(/^Bearer /,'') || '';
-  assert(/^[a-f0-9]{64}$/.test(raw),401,'invalid_device');
-  const row=await env.DB.prepare('SELECT * FROM devices WHERE token_hash=? AND revoked_at IS NULL AND expires_at>?')
-    .bind(await hash(raw),now()).first();
-  assert(row,401,'invalid_device'); return row;
 }

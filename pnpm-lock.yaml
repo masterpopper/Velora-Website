@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      jose:
-        specifier: 6.2.18
-        version: 6.2.18
       stripe:
         specifier: 23.2.0
         version: 23.2.0

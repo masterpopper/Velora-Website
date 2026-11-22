@@ -1,21 +1,13 @@
-PRIVATE / NOT DEPLOYED / TEST-ONLY
+PRIVATE SETUP CHECKLIST — GUEST CHECKOUT (NO BUYER GITHUB LOGIN)
 
-Start with docs/STRIPE-SETUP-GUIDE.md.
-Exact native contract: docs/APP-PURCHASES-CONTRACT.md.
-Current test result: 24 local tests passed; Cloudflare Functions bundle compiles.
+Read docs/STRIPE-SETUP-GUIDE.md before deployment.
 
-Do not drag these backend files into the old static GitHub repository without
-reviewing the actual Cloudflare project and the setup guide. A Git push to an
-auto-deploy branch could publish changes. No push/deployment is authorized here.
+Customer flow: Buy Plus / Buy Theme Pack -> Stripe Checkout -> signed webhook -> D1 active order -> code displayed.
 
-Preserved website files are under dist/. Root functions/ and backend/ are SERVER
-code. Only dist/ is the static output. Keep package.json and pnpm-lock.yaml at
-repository root so dependencies and Pages Functions can be compiled.
+GitHub is only repository/deployment integration. No customer OAuth app or GitHub client credentials are needed.
 
-Live product/price IDs supplied by the owner are UNVERIFIED references only.
-They are NOT configured as test products. New Velora-only test products, account
-ID, OAuth settings, D1 binding, signing keys and encrypted host secrets are needed.
-Never paste secrets in chat. Revoke the previously disclosed live restricted key.
+The Worker config is wrangler.jsonc. Replace its D1 UUID, Stripe account/product/price IDs, and exact SITE_ORIGIN. Configure STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET as encrypted Cloudflare Worker secrets. Start with PAYMENTS_MODE=test, PURCHASES_ENABLED=false and LIVE_PAYMENTS_APPROVED=false.
 
-No app source was edited. No app grant or production payment has been enabled.
-Source rights, Stripe eligibility and live-sale policies still need review.
+The source files have not been pushed or deployed by this package preparation. No Stripe credentials were obtained and no charge was made. Test end-to-end before live sales.
+
+IMPORTANT: Original app documentation says Theme Pack code the supplied Theme Pack code was rejected by the existing app API. This ZIP changes the website delivery flow, not the app. Confirm app acceptance or update the app separately before enabling live sales.

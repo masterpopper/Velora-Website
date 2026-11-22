@@ -1,30 +1,139 @@
-# Velora Update 4.0 — private Stripe test setup
+# Velora one-time purchase setup — no customer sign-in
 
-Prepared November 22, 2026. **Nothing has been published, pushed, deployed or charged by this task.** This guide is for owner-performed setup after deployment is explicitly authorized. It does not authorize a deployment. Keep the current production website unchanged until then.
+This guide is for the website purchase flow in this package. Customers do **not** create an account and do **not** sign in with GitHub. GitHub is only the place where you store the website source code so Cloudflare can deploy it; it is not part of checkout.
 
-## What exists, and exactly what is missing
+## What the customer experience does
 
-Implemented locally: `/buy`, account sign-in with GitHub OAuth+PKCE, server-side Checkout, official Stripe SDK, raw-body signed webhook validation, D1 order/event ledger, duplicate processing protection, refund/dispute handling, independent Plus and ThemePack grants, device pairing, one-time redemption and signed ES256 test entitlements. Existing static homepage and support page are retained.
+1. Customer opens `/buy` and chooses Plus ($10) or Theme Pack ($5).
+2. The Worker creates a one-time Stripe Checkout Session on the server and sends the customer to Stripe.
+3. Stripe processes the payment and sends a signed webhook to `/api/stripe/webhook`.
+4. The Worker verifies the webhook, checks the current Stripe payment, amount, currency, product, refunds and disputes, then records the order in D1.
+5. Stripe redirects the customer back to `/buy?session_id=...`. The page checks D1 and displays a code only after the verified webhook has marked the order active:
+   - Plus: the value configured in encrypted Worker secret `PLUS_DELIVERY_CODE`
+   - Theme Pack: the value configured in encrypted Worker secret `THEME_DELIVERY_CODE`
 
-Missing: confirmed Cloudflare hosting **project name/type/repository/root/build settings**; approved private HTTPS test host; separate Velora Stripe **account ID**, test products and prices, test secret key, test webhook destination+signing secret; Velora-only GitHub OAuth client; entitlement keypair; D1 test database/binding/migration; end-to-end sandbox testing; app-native integration; launch approval and source-rights/service-terms review. No backend endpoint is currently claimed live. The old `python -m http.server` preview renders pages only.
+The redirect alone never delivers a code. If the webhook is delayed, the page waits and lets the customer check again. No GitHub OAuth app, GitHub client ID, GitHub client secret, buyer account or buyer password is needed.
 
-The inspected live `https://veloratv.app` response has `Server: cloudflare`, a Cloudflare cache status and static-site headers. The local website directory has **no Git remote or Cloudflare project configuration**. This verifies Cloudflare delivery, not whether the current project is Pages, a Worker or a different origin behind Cloudflare. Follow the inspection steps below before selecting deployment settings. No authenticated hosting dashboard was inspected.
+**Important app limitation:** This package changes the website checkout and delivery page; it does not edit the Velora Android/TV app. The original app-purchases contract in the supplied project explicitly said the supplied Theme Pack code was a legacy/testing code rejected by its existing API endpoints. Therefore, before selling Theme Pack, verify that the actual app accepts the supplied Theme Pack code in its normal activation screen. If the app rejects it, the app itself must be changed separately. Showing a code on the website does not make the app accept it.
 
-## First: revoke the exposed key
+**Shared-code limitation:** These are fixed shared codes, not unique order credentials. Once a customer sees or shares a code, the website cannot take it back. A refund can stop the website from displaying it again, but cannot make a code already seen become secret again. The code itself is not proof of payment.
 
-The owner reported a live restricted key was pasted in another chat. Do not copy it here, into the repo or into this test setup. In the **Velora** Stripe account, open **Developers / Workbench → API keys** (the settings search can find “API keys”), find that restricted key, open its options menu and select **Roll/Roll key** or **Delete/Revoke** as offered. Confirm revocation in Stripe. Store any replacement only in the correct host's encrypted secrets manager. This implementation accepts **test** `sk_test_…` keys only; a replacement live restricted key is not needed for this test setup. Do not send secret values in chat.
+## Before starting
 
-## Stripe webhook clicks — the immediate answer
+You need access to:
+- Cloudflare account containing the existing Worker `velora-website`.
+- GitHub repository `masterpopper/Velora-Website` (GitHub is deployment/source hosting only).
+- The correct Velora Stripe account (not KDesk).
+- The custom domain `veloratv.app`, if that is the domain you want customers to use.
 
-Do these in the **Velora account's sandbox/test environment**, not KDesk and not live mode. You can prepare the event selection now, but Stripe needs a reachable HTTPS destination before delivery can be tested. Do not enter an invented endpoint or the undeployed production route.
+Never paste Stripe secret keys or webhook signing secrets into ChatGPT, GitHub, a source file, a screenshot or a normal Cloudflare variable. Enter them only as encrypted Worker secrets. If an old restricted Stripe key was exposed in a previous chat, revoke/roll it in Stripe before proceeding.
 
-1. Open the Stripe Dashboard. Click the account name at the top left. Select the separate **Velora** account. Verify its account ID under business/account details. Copy only the nonsecret `acct_…` identifier.
-2. In the account picker, select **Sandboxes** and create/open a Velora sandbox, or select the account's **Test mode** if that is the available testing interface. Confirm the testing indicator before creating anything. Products, prices, keys and event destination must all belong to this SAME sandbox/account context.
-3. Open **Developers → Workbench → Webhooks**. If the navigation differs, use Stripe's Dashboard search for **Webhooks** or **Event destinations**.
-4. Click **Add destination** (some accounts show **Add endpoint**).
-5. Choose events from **Your account**. Do not choose connected accounts, an organization-wide destination or KDesk.
-6. Choose **snapshot events** / the classic v1 webhook format. This implementation explicitly requires full Event snapshots, verifies them with `constructEventAsync`, and then retrieves the current resources. Thin events need a different parser and are not compatible with this handler.
-7. Choose **Select events** and add EXACTLY these supported event names:
+## Part A — update the GitHub repository
+
+1. Download and extract the updated ZIP supplied with this guide.
+2. Open the existing repository `masterpopper/Velora-Website`.
+3. Replace the repository files with the extracted files, keeping the folder structure. The important files are `wrangler.jsonc`, `worker/index.mjs`, `backend/`, `migrations/`, `package.json`, `pnpm-lock.yaml` and `dist/`.
+4. Do not upload `.env` files containing secrets. This package uses `wrangler.jsonc` for non-secret Worker configuration and Cloudflare encrypted secrets for private values.
+5. Do **not** push the files yet. First create D1, create the Stripe TEST products, and replace every required placeholder in `wrangler.jsonc`. A push before those values are filled will fail deployment.
+
+For an easy file replacement, use GitHub Desktop: clone `masterpopper/Velora-Website`, open the local repository folder, extract this ZIP somewhere else, copy the ZIP's contents into the repository root (not the ZIP's parent folder), overwrite files when asked, then commit and push after Parts B–F are ready. Keep a backup of the current repository first.
+
+## Part B — create the D1 database and run the SQL
+
+Create a dedicated TEST database first. Do not use a KDesk database and do not put test transactions into a live purchase database.
+
+1. Open Cloudflare Dashboard → **Storage & databases** → **D1 SQL Database**.
+2. Click **Create database**.
+3. Name it `velora-purchases-test` and create it.
+4. Open the new database and copy its **Database ID** (UUID). This ID is not a secret.
+5. In the extracted project, open `wrangler.jsonc`.
+6. Find the D1 entry and replace `REPLACE_WITH_YOUR_D1_DATABASE_UUID` with the UUID you copied. Keep the database name `velora-purchases-test` and binding name `DB`.
+7. Open the D1 database's **Console** in Cloudflare.
+8. Open `migrations/0001_purchases.sql` in the extracted project, copy the entire file, paste it into the D1 Console and run it once.
+9. Confirm the SQL completed successfully. It creates only the anonymous orders table, webhook event ledger and rate-limit table. There are no buyer accounts, OAuth tables, pairing tables or customer sign-in requirements.
+
+The same SQL can be applied from a terminal at the repository root after Wrangler is authenticated:
+
+```bash
+npx wrangler d1 execute velora-purchases-test --remote --file=migrations/0001_purchases.sql --config wrangler.jsonc
+```
+
+Do not run the migration twice as a way to reset purchases. It uses `CREATE TABLE IF NOT EXISTS`; it does not delete old data.
+
+## Part C — set the Worker configuration
+
+The project is a **Cloudflare Worker with static assets**, not a Pages Functions project. `wrangler.jsonc` explicitly names the Worker `velora-website`, uses `worker/index.mjs`, serves the website from `dist/`, and binds D1 as `DB`. This explicit config prevents Wrangler from guessing that the repository should be deployed as Pages Functions.
+
+1. In `wrangler.jsonc`, set `SITE_ORIGIN` to the exact HTTPS origin customers will use, with no trailing slash. Use `https://veloratv.app` only if that hostname is attached/routed to this Worker. Otherwise use the actual `https://...workers.dev` address shown in Cloudflare while testing.
+2. Keep `PAYMENTS_MODE` as `test`.
+3. Keep `PURCHASES_ENABLED` as `false` until Stripe test products, keys, D1 and webhook are configured.
+4. Keep `LIVE_PAYMENTS_APPROVED` as `false`.
+5. Replace `STRIPE_ACCOUNT_ID` with the non-secret `acct_...` ID for the correct Velora Stripe account/sandbox.
+6. Replace the four product/price placeholders with the TEST IDs you create in Part E.
+7. Save `wrangler.jsonc`.
+
+Do not set `PAYMENTS_MODE=live` during setup. Do not enable live payments as part of the test.
+
+## Part D — configure Cloudflare Workers Builds with GitHub
+
+This GitHub connection deploys code. It does not make buyers sign in to GitHub.
+
+1. Cloudflare Dashboard → **Workers & Pages** → open the existing Worker `velora-website`.
+2. Open **Settings** → **Builds** (some dashboards label this **Builds & deployments**).
+3. If a Git repository is already connected, verify it is `masterpopper/Velora-Website`. If not, click **Connect** and select that repository.
+4. Set the production branch to the branch you actually commit to (usually `main`).
+5. Set the root directory to the repository root (`/` or blank).
+6. Leave the build command blank; Cloudflare Workers Builds already installs dependencies from the repository lockfile, as shown in your earlier build log.
+7. Set the deploy command to:
+
+```bash
+pnpm exec wrangler deploy --config wrangler.jsonc
+```
+
+8. Do not use `wrangler pages deploy`, `wrangler pages functions build`, or plain `npx wrangler deploy` without the config file.
+9. Save the build settings and push/commit the updated files when ready. Watch the build log. It should deploy the Worker named `velora-website` using `worker/index.mjs` and static assets from `dist/`.
+
+Cloudflare requires the Worker name in `wrangler.jsonc` to match the Worker selected in the dashboard. If the existing Worker is not actually named `velora-website`, stop and change the `name` in the config to the exact Worker name before deploying.
+
+## Part E — create the TEST products in Stripe
+
+Use the **Velora** Stripe account, not KDesk. Make sure the dashboard is clearly in Test mode or the Velora sandbox before creating products or copying keys.
+
+1. Open Stripe Dashboard and select the Velora account.
+2. Switch to **Test mode** / the Velora sandbox.
+3. Open **Product catalog** → **Add product**.
+4. Create **Velora Plus** with a one-time price of **USD $10.00**. Do not choose recurring/subscription billing.
+5. Save it. Copy the Product ID (`prod_...`) and the one-time Price ID (`price_...`). They are different IDs.
+6. Create **Velora Theme Pack** with a one-time price of **USD $5.00**. Do not choose recurring billing. Save and copy its Product ID and Price ID.
+7. In `wrangler.jsonc`, fill in `PLUS_PRODUCT_ID`, `PLUS_PRICE_ID`, `THEME_PRODUCT_ID`, and `THEME_PRICE_ID` with those four TEST IDs.
+8. In the same Velora test context, open **Developers / Workbench → API keys** and copy the TEST secret key (`sk_test_...`). Do not put it in `wrangler.jsonc` or GitHub.
+9. In Stripe account details, confirm the account ID (`acct_...`) and put that non-secret ID in `wrangler.jsonc` as `STRIPE_ACCOUNT_ID`.
+
+The code checks the Stripe account, active one-time Price, product, USD currency and exact amounts ($10/$5) before it creates Checkout. It does not accept a client-supplied amount.
+
+## Part F — add encrypted Stripe secrets to Cloudflare
+
+1. Cloudflare Dashboard → Workers & Pages → `velora-website` → **Settings** → **Variables and Secrets**.
+2. Add a secret named `STRIPE_SECRET_KEY` and paste the Velora TEST secret key (`sk_test_...`). Select **Secret / Encrypt**, not plain text.
+3. Add a secret named `PLUS_DELIVERY_CODE` and set its value to the Plus code you want to deliver after confirmed payment.
+4. Add a secret named `THEME_DELIVERY_CODE` and set its value to the Theme Pack code you want to deliver after confirmed payment.
+5. Save all three secrets. The actual delivery codes are deliberately kept out of the GitHub repository and browser JavaScript.
+6. Do not enable purchases yet. You still need the webhook signing secret in Part G.
+
+If you have separate Preview and Production environments in Workers Builds, make sure you add the secrets to the environment that is actually receiving the deployment. This guide uses the selected Worker deployment, not Pages Preview bindings.
+
+**First deployment:** Once the D1 UUID, Stripe test account ID, four TEST product/price IDs, and exact `SITE_ORIGIN` are filled in, commit and push the repository. Cloudflare should deploy the Worker with `PURCHASES_ENABLED=false`. Verify that `/buy` loads and reports that purchases are unavailable. Then add the Stripe and delivery-code secrets above if you have not already done so. Only after this first deployment should you create the webhook destination in Part G.
+
+## Part G — create the Stripe TEST webhook
+
+Create this only after the Worker is deployed and the URL `/api/stripe/webhook` is reachable on the exact `SITE_ORIGIN`.
+
+1. In Stripe, stay in the same Velora TEST mode/sandbox as the test products and test secret key.
+2. Open **Developers → Workbench → Webhooks** (or use Stripe Dashboard search for Webhooks / Event destinations).
+3. Click **Add destination** / **Add endpoint**.
+4. Choose events from **Your account**.
+5. Choose **Snapshot events** (the classic event payload), not thin events.
+6. Select these event names:
 
 ```text
 checkout.session.completed
@@ -44,135 +153,62 @@ charge.dispute.funds_withdrawn
 charge.dispute.funds_reinstated
 ```
 
-8. Click **Continue**. Select **Webhook endpoint** as destination type, not EventBridge.
-9. For the API version, select **2026-11-18.endive**, matching pinned `stripe@23.2.0`. If the exact snapshot API version is unavailable, stop and align SDK/destination versions before proceeding; do not silently change to a thin event format.
-10. For **Endpoint URL**, after an authorized test deployment exists, enter its EXACT HTTPS origin plus **`/api/stripe/webhook`**. The template is `https://YOUR-APPROVED-TEST-HOST/api/stripe/webhook`; this is a template, not a deployed URL. Do not use localhost, `/buy`, a `#` anchor or the production domain while testing elsewhere.
-11. Set a descriptive name, such as **Velora test purchases**. Click **Create destination** / **Add endpoint**.
-12. Open that destination. Under **Signing secret**, click **Reveal**. Copy the `whsec_…` value directly into the Cloudflare **Preview environment's encrypted `STRIPE_WEBHOOK_SECRET`**. Do not paste it in chat, GitHub, APK code, screenshots or this guide.
-13. Save the secret and, only when deployment is authorized, redeploy the same preview branch so Functions see it.
-14. Open the destination's **Event deliveries** after a sandbox checkout. Expected result for handled events is HTTP **200**. Invalid signatures return **400**; configuration/database/provider errors return **503**, so Stripe retries rather than acknowledging lost fulfillment. A test dashboard “Send test event” with fabricated metadata may return 200 ignored; it is NOT proof of a real order fulfillment. The proper test starts at the site's Buy button with a signed-in account.
+7. Select a webhook endpoint destination (not EventBridge).
+8. Use API version `2026-11-18.endive` for the pinned Stripe SDK in this package. If Stripe does not offer that version in your dashboard, stop and ask for the SDK/API version to be aligned rather than choosing a thin-event destination.
+9. Set the endpoint URL to your exact Worker origin plus `/api/stripe/webhook`. Example only: `https://velora-website.cloudflare-mtoth.workers.dev/api/stripe/webhook`. Use the actual Worker URL displayed in your Cloudflare account; if you use `https://veloratv.app`, ensure that hostname is routed to this Worker.
+10. Create the destination.
+11. Open the destination's signing secret and reveal the `whsec_...` value.
+12. In Cloudflare Worker → Settings → Variables and Secrets, add `STRIPE_WEBHOOK_SECRET` as an encrypted **Secret**. Never place it in GitHub or chat.
+13. Confirm the Worker now has all four encrypted secrets: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `PLUS_DELIVERY_CODE`, and `THEME_DELIVERY_CODE`.
 
-Stripe retries can deliver duplicates and out-of-order events. The backend records successful event IDs and recomputes each order from current Stripe state under a per-order lock. It never trusts the checkout redirect. [Official event setup](https://docs.stripe.com/events/set-up-events), [webhook troubleshooting](https://docs.stripe.com/events/manage-webhook-endpoints), [Checkout fulfillment](https://docs.stripe.com/checkout/fulfillment.md?ui=full-page).
+A Stripe webhook request should receive HTTP 200 when processed. A bad signature returns 400. A missing database/secret or temporary Stripe failure returns 503 so Stripe can retry.
 
-## Create the two TEST products and prices
+## Part H — enable TEST checkout and test end-to-end
 
-The IDs supplied by the owner are **live references**, not test IDs:
+Only do this after the Worker, D1 migration, Stripe test products, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `PLUS_DELIVERY_CODE` and `THEME_DELIVERY_CODE` are all configured.
 
-| Item | Supplied live product | Supplied live price |
-|---|---|---|
-| Plus | `prod_VfkR38nmjd6LZA` | `price_1UeOx3JF7LV4As9NyAsGzgni` |
-| Theme Pack + Donation | `prod_VfkRl8aJoPcEYR` | `price_1UeOwtJF7LV4As9NL4ioGgj6` |
+1. In `wrangler.jsonc`, change `PURCHASES_ENABLED` from `false` to `true`. Keep `PAYMENTS_MODE` set to `test` and `LIVE_PAYMENTS_APPROVED` set to `false`.
+2. Commit and push. Wait for Cloudflare's deployment to finish successfully.
+3. Open `SITE_ORIGIN/buy`.
+4. Confirm the banner says Test mode and the two products show $10 and $5.
+5. Click Plus. Stripe Checkout should show USD $10.00 as a one-time payment. Use Stripe's standard test card `4242 4242 4242 4242`, a future expiry date and any CVC. This is a simulated test transaction; it does not charge a real card.
+6. Complete Checkout. Stripe redirects back to `/buy?session_id=...`.
+7. The page waits for the signed webhook. Once the webhook has been accepted and the order becomes active, it displays the configured Plus delivery code.
+8. Repeat for Theme Pack. It should show the configured Theme Pack delivery code only after its verified $5 test payment.
+9. In Stripe → Webhooks → your test destination → Event deliveries, confirm the Checkout/payment event was delivered successfully (HTTP 200).
+10. Test a cancelled checkout. It must not display a code.
+11. Test a declined test card (Stripe's documented decline test card, e.g. `4000 0000 0000 0002`). It must not display a code.
+12. Refund a test payment in Stripe. The order should no longer be eligible for code display on a later status check. Remember: a fixed code already shown to a buyer cannot be recalled or made private again.
+13. If a test payment completes but no code appears, check the webhook delivery, D1 order state and Cloudflare Worker logs. Do not bypass webhook verification or manually set an order active.
 
-They are recorded in `docs/LIVE-REFERENCES.json` as unverified. They are NOT loaded by the backend. Do not put them in the test environment.
+## Part I — prepare LIVE sales only after tests pass
 
-1. Stay in the separate **Velora sandbox/test context** from the webhook steps.
-2. Open **More → Product catalog → + Add product**.
-3. Name: **Velora Plus**. Add an accurate description of Plus for the compatible app; do not promise content rights, provider queue access, bandwidth or guaranteed stream quality.
-4. In **Pricing**, choose **Flat rate → One time**. Currency **USD**, amount **10.00**, quantity one. Do not choose recurring, subscription, free trial, customer-chosen amount, package pricing, adjustable quantity, coupons or a tax-added test price.
-5. Save the product. Open its details. Copy **Product ID** (`prod_…`) into your nonsecret setup worksheet as `PLUS_PRODUCT_ID`.
-6. In the **Pricing** section, click the $10 one-time price. Copy its **Price ID** (`price_…`) as `PLUS_PRICE_ID`. A product ID and price ID are different values.
-7. Repeat **Add product**. Name: **Theme Pack + Donation**. Description: **$5 one-time digital theme purchase; a thank-you for supporting Velora. Available without Plus. Not a tax-deductible donation.**
-8. Select **Flat rate → One time → USD → 5.00**. Save. Copy `THEME_PRODUCT_ID` and `THEME_PRICE_ID` from the product and its price details.
-9. Keep both products/prices active. No Payment Link is needed: the authenticated server creates Checkout Sessions from this allowlist. No publishable Stripe key is needed in the browser.
-10. Open **Developers / Workbench → API keys** in this same test context. Copy its **test secret key** directly into Cloudflare's encrypted `STRIPE_SECRET_KEY`. This build checks for a test key and retrieves the account using the SDK; the key's account must equal `STRIPE_ACCOUNT_ID`. No KDesk credentials are read or accepted.
+Do not do this until both products have passed sandbox checkout, both codes display correctly, webhook retries are successful, and you have verified the app accepts both codes.
 
-The backend enforces $10/$5 in USD with no discount or tax addition in this private test. A real tax, consumer refund and geographic-sales policy still needs review before production; do not treat this test behavior as a legal tax determination. [Stripe product/price guide](https://docs.stripe.com/products-prices/manage-prices).
+1. In Stripe's LIVE mode, verify the existing Velora products and prices. The IDs already present in `docs/LIVE-REFERENCES.json` are owner-supplied but unverified; confirm they belong to the correct Velora account, are active, one-time USD prices, and exactly $10 and $5. If not, create the correct live products/prices and use their actual IDs.
+2. Create a separate D1 database named `velora-purchases-live` and run `migrations/0001_purchases.sql` in that database once.
+3. Update `wrangler.jsonc` to the LIVE D1 database name/UUID, live Stripe account/product/price IDs, `PAYMENTS_MODE: "live"`, and `SITE_ORIGIN: "https://veloratv.app"` (only if the domain is attached to this Worker).
+4. Keep `PURCHASES_ENABLED` set to `false` and `LIVE_PAYMENTS_APPROVED` set to `false` while preparing.
+5. In Stripe LIVE mode, create a separate webhook destination with the same snapshot event list and endpoint `https://veloratv.app/api/stripe/webhook` (only once that route is live and reachable).
+6. Add the LIVE `sk_live_...` key and LIVE `whsec_...` signing secret as encrypted Worker secrets. Never reuse test secrets in live mode.
+7. Deploy the prepared live configuration while checkout remains disabled. Verify `/api/config` reports live mode and `enabled:false`; confirm webhook delivery using Stripe's live endpoint test mechanism without creating a customer charge.
+8. Only after final owner approval, set `LIVE_PAYMENTS_APPROVED` to `true` and `PURCHASES_ENABLED` to `true`, deploy, and perform a carefully controlled first real purchase/refund if appropriate.
 
-## Confirm the actual Cloudflare host first
+## What is still not done by this ZIP
 
-1. Open the Cloudflare dashboard and choose the account that owns **veloratv.app**.
-2. Open **Workers & Pages**. Inspect existing projects. Open the project whose **Custom domains** includes exactly `veloratv.app`; do not select KDesk.
-3. Record the **project name**, whether it is **Pages or Worker**, its `pages.dev`/`workers.dev` hostname, and **Settings → Builds & deployments** repository, production branch, root directory, build command and output directory. Do not modify DNS or disconnect Git.
-4. If it is **Pages connected to GitHub**, this package supports that model. The intended repo layout is `package.json`, lockfile, `functions/`, `backend/`, `migrations/`, `docs/`, `tests/`, and `dist/`. The production branch remains unchanged. A future approved preview branch can be named `valora-purchases-test`.
-5. If it is a **Worker**, or a proxy to another hosting origin, stop before uploading this backend. A Pages Functions folder is not a Worker entrypoint. Record the actual project details so the backend can be adapted to that host. The successful Functions bundle does not establish that a Worker deployment would work unchanged.
-6. If it is **Pages Direct Upload**, dashboard drag-and-drop does not compile Functions. Use a Git-integrated test project or an owner-approved Wrangler workflow; do not upload this backend as static files. Do not upload backend source, environment samples or migration SQL to a public static output directory.
+- It cannot create your Cloudflare account resources, choose your Stripe account, copy private Stripe keys, create the Stripe webhook, or push to your GitHub repository on your behalf.
+- The package cannot verify the live product IDs until they are checked in your Stripe dashboard.
+- The supplied app contract explicitly stated that the supplied Theme Pack code was rejected by the old app API. The website can show it, but the app may still reject it until the app is separately changed and tested.
+- A code shown after payment is not the same as a unique/revocable entitlement. These fixed shared codes can be copied and reused by anyone who knows them.
+- Taxes, refund terms, consumer disclosures, business eligibility, and rights to any third-party content/services need owner review before live sales.
 
-No project ID or exact test hostname was discoverable locally; the remaining dashboard choices are conditional on the confirmed Pages project, rather than an invented existing host. [Cloudflare Functions setup](https://developers.cloudflare.com/pages/functions/get-started/).
+## Troubleshooting
 
-## Configure D1 and Pages without touching production
-
-The following steps describe a future authorized test setup. They have NOT been executed by this task.
-
-1. In Cloudflare, open **Storage & databases → D1 SQL database → Create database**. Name it **valora-purchases-test**. Do not reuse KDesk's database or a live purchases database.
-2. Open the new database → **Console**. Copy the complete contents of `migrations/0001_purchases.sql` into the SQL console and run it once. Its statements create the account/order/event/device tables and uniqueness constraints. Save the database's nonsecret name/UUID in the setup worksheet. For CLI migration instead, an authenticated operator can run `npx wrangler d1 execute valora-purchases-test --remote --file migrations/0001_purchases.sql`; that changes the remote test DB and is not run by this task.
-3. Open the confirmed **Pages project → Settings → Bindings**. Select **Preview** environment. **Add → D1 database**, variable name **DB**, choose **valora-purchases-test**, Save. Keep Production unbound to these test resources.
-4. Open **Settings → Variables and Secrets**. Select **Preview**. Add the plaintext variables listed in the table below. For each secret, choose **Encrypt** before **Save**. Do not enter anything under a similarly named KDesk project.
-5. Under runtime compatibility settings, add **nodejs_compat** and set compatibility date **2026-11-22** for Preview.
-6. Once a deployment is authorized, the Pages build must install the root package and compile root `functions/`. Use **Framework: None**, **Root: repository root**, **Build command: `pnpm install --frozen-lockfile && pnpm run check:bundle`**, **Build output directory: `dist`**, and Node 24 (`NODE_VERSION=24`). Keep the generated function bundle under ignored `work/`, not `dist/`; Pages performs its own Functions build from `functions/`. Lockfile is `pnpm-lock.yaml`; dependencies are pinned. If using npm, intentionally generate/review an npm lockfile first rather than silently mixing lockfiles.
-7. A preview branch deployment must use the exact **branch alias** origin for `SITE_ORIGIN`, OAuth callback and Stripe destination. Example syntax only: `https://valora-purchases-test.YOUR-PROJECT.pages.dev`. Use the actual alias Cloudflare returns; do not substitute the example as if it exists. Random hash aliases will fail the deliberate exact-host check unless configured as the selected origin.
-8. After variables/bindings change, an authorized redeploy is required. Never merge the test branch into production automatically.
-
-Pages previews are public by default. To keep a future test deployment private, configure Cloudflare Access to restrict the Buy page/account/device APIs to testers. **Stripe cannot complete a human Access login**: give only the exact `/api/stripe/webhook` path an Access bypass policy so signed Stripe requests can arrive. That endpoint authenticates the raw Stripe signature and accepts no public purchase claim. Do not bypass the whole site or disable the policy globally. Test-device requests also need an appropriate tester/service access policy; never embed a Cloudflare Access service secret in the APK. Fully local/offline testing remains private without any published host. The noindex tag alone is not access control. The exact Access application/policy UI depends on the selected account and is a separate owner-controlled security setup.
-
-[D1 setup](https://developers.cloudflare.com/d1/get-started/), [bindings and encrypted secrets](https://developers.cloudflare.com/pages/functions/bindings/), [preview deployments and access](https://developers.cloudflare.com/pages/configuration/preview-deployments/).
-
-### Runtime settings worksheet
-
-| Variable / binding | Where | Value to use |
-|---|---|---|
-| `DB` | Preview → Bindings → D1 | Velora-only test database |
-| `SITE_ORIGIN` | Preview plaintext | Exact approved HTTPS test origin, no trailing slash/path |
-| `PAYMENTS_MODE` | Preview plaintext | `test` |
-| `PURCHASES_ENABLED` | Preview plaintext | `false` during setup; `true` only for owner-authorized sandbox testing |
-| `STRIPE_ACCOUNT_ID` | Preview plaintext | Actual Velora sandbox/account `acct_…` returned by the test key |
-| `PLUS_PRODUCT_ID`, `PLUS_PRICE_ID` | Preview plaintext | New TEST IDs from the steps above |
-| `THEME_PRODUCT_ID`, `THEME_PRICE_ID` | Preview plaintext | New TEST IDs from the steps above |
-| `GITHUB_CLIENT_ID` | Preview plaintext | Velora-only OAuth client ID |
-| `ENTITLEMENT_KEY_ID` | Preview plaintext | e.g. `valora-test-v1`; agree with native test build |
-| `ENTITLEMENT_PUBLIC_JWK` | Preview plaintext | Public JSON P-256 JWK, no `d` property |
-| `STRIPE_SECRET_KEY` | Preview **encrypted secret** | Velora sandbox's `sk_test_…` key |
-| `STRIPE_WEBHOOK_SECRET` | Preview **encrypted secret** | Signing secret for that sandbox destination |
-| `GITHUB_CLIENT_SECRET` | Preview **encrypted secret** | Velora-only OAuth client secret |
-| `ENTITLEMENT_PRIVATE_JWK` | Preview **encrypted secret** | Matching private JSON P-256 JWK |
-
-The `.env.example` contains placeholders only. It is not runtime configuration. Do not fill it with secrets and upload it. No `wrangler.toml` with fabricated IDs is supplied; the guide uses dashboard bindings intentionally.
-
-## GitHub sign-in account setup
-
-1. In GitHub, click profile picture → **Settings → Developer settings → OAuth Apps → New OAuth App**.
-2. Name it **Velora Purchases Test**; homepage is the actual approved private test origin.
-3. **Authorization callback URL:** exact same origin plus **`/api/auth/callback`**. Save/Register application.
-4. Copy its nonsecret **Client ID** to `GITHUB_CLIENT_ID`. Click **Generate a new client secret**; put it directly in encrypted `GITHUB_CLIENT_SECRET`, not chat/repo.
-5. No repository or write scope is requested. The app uses GitHub's authenticated numeric user ID as the stable account owner, then discards the access token from process memory. User sign-out revokes the website session, not the user's GitHub account.
-6. Do not change callback to the public production domain while the backend is on a preview host. Native test builds must agree on that test issuer. If the native test verifier is currently hardcoded to `https://veloratv.app`, either use offline fixtures with that issuer or make a reviewed test-only issuer override; do not weaken production issuer validation.
-
-[GitHub OAuth app registration](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app), [web authorization and PKCE](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps).
-
-## Signing keys — no secrets in chat or files
-
-`node scripts/generate-entitlement-key.mjs` (Windows) generates a private P-256 JWK in memory and copies it to the clipboard without printing or saving it. Immediately paste it into Cloudflare's encrypted **ENTITLEMENT_PRIVATE_JWK**, save, then clear the clipboard. The script prints only the matching public JWK, which belongs in **ENTITLEMENT_PUBLIC_JWK** and can be shared with the app developer alongside the key ID. Use this on a trusted local machine, not an online key generator. The private key is never included in the delivered files. Treat clipboard history as sensitive and clear it if enabled.
-
-For native verification tests only, `scripts/create-native-fixtures.mjs` generates ephemeral keys in memory and writes public keys plus signed test cases to an explicitly chosen output file. These fixtures do not represent purchased access and must never be trusted by a production APK. The app contract describes exact issuer/audience/device checks.
-
-## Sandbox test sequence after authorized setup
-
-No real cards, live keys, real purchases or real refunds are used here. Begin with `PURCHASES_ENABLED=false` and confirm Buy buttons are disabled. Enable only in the approved test environment once all bindings/secrets are correct.
-
-1. Visit the test host's `/buy`; verify **Private test** banner. Sign in with GitHub. Buy **Plus** with Stripe's test card **4242 4242 4242 4242**, future expiry, any test CVC. Confirm Checkout displays **USD $10, one-time**, then complete only the sandbox checkout. Expect return page to remain pending until the webhook delivery is 200 and `/api/account` returns active Plus.
-2. Repeat on a fresh test account for **Theme Pack + Donation** only. Confirm **USD $5, one-time** and `theme_pack=true, plus=false`. Plus is not a prerequisite. App UI should describe Sports-source preference accurately.
-3. Try canceling Checkout and directly visiting `/buy?checkout=returned&paid=true`. Neither grants an upgrade. Try decline card **4000 0000 0000 0002** in sandbox; no successful grant should appear.
-4. In Stripe → **Workbench → Webhooks → Velora test purchases → Event deliveries**, open the real checkout event and **Resend** it twice. Verify one order and one processed event ID, no duplicated ownership. Deliver old success after a refund; it must not reactivate the revoked order because the handler fetches current refunds.
-5. Refund in the sandbox: **Payments → choose the test payment → Refund → full amount → Confirm**. For Plus, the affected order becomes revoked and the next device sync omits that Stripe grant. Independent ThemePack or approved legacy Plus stays intact. Partial successful refunds also revoke that order in this implementation; review/disclose that policy before live sales.
-6. Pending refund/dispute cases suspend access until current Stripe state resolves. In sandbox use Stripe's documented refund/dispute test scenarios. A won dispute or a failed/canceled refund can restore an otherwise paid order; a lost dispute revokes. D1 stores latest computed state, not event delivery order. See the offline tests for deterministic coverage, including out-of-order/refund-before-fulfillment behavior.
-7. For delayed payment methods, enable a supported method in the Velora sandbox payment-method settings, complete its documented test flow, and observe `checkout.session.completed` with `payment_status=unpaid` remains pending. Only `async_payment_succeeded` plus current paid PaymentIntent can grant. `async_payment_failed` does not grant. The SDK does not force a list of payment methods; sandbox/account eligibility determines which Checkout methods appear. If none are eligible, use the included simulated tests rather than pretending a delayed end-to-end test occurred.
-8. Test TV pairing with a native test build: init → QR → same GitHub account → explicit approval → signed entitlement. Reusing the QR pair code must fail. Generate a redemption token; redeem once, reuse must fail. `557432` must fail. A different-account device cannot be rebound with another buyer's token.
-9. Revoke a device from the account page. It must get 401 on its next sync. A previously cached signed claim expires within one hour; this is the stated maximum offline revocation delay.
-10. In a developer-only test client, tamper with a webhook body/signature, send the wrong account/mode/price/currency/quantity, use an expired OAuth state and forge `Origin`. Expect 400/403/409 with no grants. Do not call these manual tests production verification.
-
-[Stripe's official testing guide](https://docs.stripe.com/testing) has current card/refund/dispute scenarios. No sandbox end-to-end payments have been executed in this task; only local simulated tests and bundle checks have run.
-
-## Operations and recovery
-
-- Retain durable `orders`, `webhook_events`, account mappings and audited legacy grants. Use D1 backups/Time Travel and an owner-approved backup policy. Do not clear purchases to fix a UI problem.
-- Monitor webhook failed deliveries. Stripe retries; when a configuration error is fixed, resend failed genuine order events from Workbench. The handler records the event only after its database batch succeeds. Never manually mark an order active because someone shows a success URL or receipt screenshot.
-- This initial Pages implementation relies on delivered/retried webhooks plus operator replay; no scheduled reconciler is deployed. Before a live launch, add/review a reconciliation job for missed events and alerting. Do not silently leave a missed refund unobserved. Inspect current Stripe resources for a given session before recovery.
-- `docs/cleanup-ephemeral.sql` removes only expired OAuth/session/rate/pair/redemption entries. Run maintenance in the correct test DB; purchases and event receipts are retained. Pages has no native cron in this package; scheduled cleanup requires an owner-approved scheduler later.
-- Test accounts/device APIs have request limits. Configure Cloudflare WAF/bot/rate policies before public sales; no bot protection or chargeback-proof guarantee is claimed. The public webhook path relies on Stripe signatures, not knowledge of its URL.
-
-## Production is a separate review, not a switch
-
-Do not set `PAYMENTS_MODE=live` or insert live IDs to “make it work”: the code rejects live keys and events. A production release requires explicit authorization, a reviewed implementation change supporting live mode, separate live DB/keys/kid/audience, verified Velora account and live allowlists, compatible app verification, app entitlement migration, end-to-end tests, refund/tax/privacy/consumer terms, provider/content rights and Stripe eligibility approval. A separate account or the wording “Donation” does not bypass service terms or restricted-business rules. The website task cannot establish ownership/licensing of third-party sources; **that approval remains unresolved**. [Stripe restricted-business rules](https://stripe.com/legal/restricted-businesses).
-
-## Nonsecret values you may supply
-
-Send ONLY: actual Cloudflare project name/type, GitHub website repository URL, production branch/root/output settings, approved test hostname, test D1 database name/UUID, Velora `acct_…`, the four TEST `prod_…`/`price_…` values, GitHub OAuth client ID, Stripe webhook destination ID (`we_…`) and selected API version, entitlement key ID and **public-only** JWK. Product/price live references already supplied remain unverified. Never send `sk_…`, `rk_…`, `whsec_…`, OAuth client secrets, private JWK `d`, session cookies, device bearer tokens or redemption tokens in chat.
+- `database_not_configured`: D1 binding must be named exactly `DB`; confirm the Wrangler config contains the correct database name and UUID, then redeploy.
+- `stripe_key_mode_mismatch`: test mode requires `sk_test_...` / `rk_test_...`; live mode requires a live key.
+- `stripe_account_mismatch`: the key and `STRIPE_ACCOUNT_ID` are from different Stripe accounts or sandbox contexts.
+- `price_configuration_rejected`: wrong product/price ID, inactive price, recurring price, wrong amount/currency, or test/live mismatch.
+- `webhook_not_configured`: add the correct `STRIPE_WEBHOOK_SECRET` as an encrypted Worker secret and redeploy.
+- Stripe webhook 400: wrong endpoint signing secret, wrong Stripe environment, or signature body mismatch. Do not turn off signature checks.
+- Stripe webhook 503: inspect Worker logs for database, Stripe key, account, or binding errors; Stripe retries 5xx responses.
+- Customer returns but no code: verify the correct `SITE_ORIGIN`, session ID in the return URL, webhook event delivery HTTP 200, and order state in D1. A redirect alone is never proof of payment.

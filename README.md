@@ -1,32 +1,40 @@
-# Velora — veloratv.app
+# Velora website + guest purchase flow
 
-## Private purchase implementation (November 22, 2026)
+The customer-facing purchase flow is intentionally simple: choose Plus ($10) or Theme Pack ($5), pay through Stripe Checkout, and receive the configured code on the return page only after a signed Stripe webhook confirms payment.
 
-The project now includes a PRIVATE, TEST-ONLY purchase backend. Do not deploy it with the old static-only upload steps. Read `docs/STRIPE-SETUP-GUIDE.md` first for hosting inspection, the webhook click-by-click setup, encrypted secrets and remaining prerequisites. No deployment or payment traffic was performed.
+- No buyer account or GitHub sign-in is required.
+- GitHub is used only to store source code and optionally trigger Cloudflare Worker deployments.
 
-- `dist/buy/`: Buy page, independent $10 Plus / $5 Theme Pack + Donation digital purchases.
-- `functions/`, `backend/`: Cloudflare Pages Functions API with official Stripe SDK, account auth, D1 fulfillment and signed test entitlements.
-- `migrations/`: durable test database schema.
-- `docs/APP-PURCHASES-CONTRACT.md`: exact native integration contract; app source remains untouched.
-- `scripts/create-native-fixtures.mjs`: ephemeral offline native JWT fixtures.
-- `package.json`, `pnpm-lock.yaml`, `tests/`: pinned dependencies and local validation.
+## Deployment
 
-Requires Node 24 and pnpm: `pnpm install --frozen-lockfile`, `pnpm test`, `pnpm run check:bundle`. Checkout is disabled by default; live keys are rejected. `.env.example` has placeholders only. Never commit actual secrets or upload backend source into a static output directory. Local Python preview serves visuals only, not the API.
+This repository is configured as a Cloudflare Worker with static assets, not Cloudflare Pages Functions. `wrangler.jsonc` names the Worker `velora-website`, uses `worker/index.mjs`, serves `dist/`, and binds D1 as `DB`. Replace the D1 UUID and non-secret Stripe IDs in `wrangler.jsonc`, configure the encrypted Stripe secrets in Cloudflare, and follow `docs/STRIPE-SETUP-GUIDE.md` step by step.
 
-The older static-site notes below describe the homepage and support page, not a payment backend deployment.
+## Required setup
 
-Finished static website source is in dist/. No build or dependency installation is required. Serve with python -m http.server 4173 --directory dist, or upload the contents of dist/ to a static host.
+1. Create a Velora-only D1 database and run `migrations/0001_purchases.sql` once.
+2. Create/verify one-time TEST Stripe products/prices: $10 Plus and $5 Theme Pack.
+3. Configure `STRIPE_ACCOUNT_ID`, the four product/price IDs, exact `SITE_ORIGIN`, `PAYMENTS_MODE=test`, and keep checkout disabled until setup is complete.
+4. Add encrypted `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `PLUS_DELIVERY_CODE`, and `THEME_DELIVERY_CODE` Worker secrets.
+5. Create the Stripe snapshot webhook at `/api/stripe/webhook` with the documented events.
+6. Enable sandbox checkout and test successful, canceled, failed, and refunded payments.
+7. Only after tests pass and the app is verified to accept both codes should live setup be considered.
 
-The website uses embedded authentic app artwork and system fonts, so images and typography do not depend on external hosts or asset paths. Original artwork files are retained in dist/assets for editing. Sports and remote graphics are CSS illustrations, not live app screenshots.
+No real deployment, Stripe account connection, secret retrieval, webhook creation, charge or live purchase has been performed by preparing this ZIP. See `docs/STRIPE-SETUP-GUIDE.md` for the full instructions and `migrations/0001_purchases.sql` for the SQL.
 
-All download buttons open https://github.com/masterpopper/reform/releases. No version-specific APK URL is hardcoded. Downloader code 7862737 was supplied by the owner. The destination of that code was not independently tested on a physical TV.
+## Local checks
 
-Features include mobile navigation, an accessible full-interface dialog, keyboard-operable installation tabs, code copying with a manual fallback, and native expandable FAQs. Verified at desktop and 390px mobile viewport: image decoding, no horizontal overflow, menu, dialog, installation tabs, clipboard confirmation, and download destinations. JavaScript syntax check passed.
+Node 24 and pnpm are used by Cloudflare's build environment. Run:
 
-Design draws on the supplied parky.watch reference for product clarity and installation structure, while preserving Velora branding. No third-party copy or artwork is used.
+```bash
+pnpm install --frozen-lockfile
+pnpm test
+pnpm run check:worker
+```
 
-No DNS, domain, live site, app code or APK release was changed. Public deployment to veloratv.app remains separate. Work is isolated in D:/Codex/VeloraTV.app.
+`pnpm run check:worker` is a dry-run and does not deploy. To deploy after configuration and authorization:
 
+```bash
+pnpm exec wrangler deploy --config wrangler.jsonc
+```
 
-## Purchase code delivery
-The `/buy` page reveals the Theme Pack code `557432` or Plus code `656781` only when the signed-in account has a webhook-verified active order for that product in the current payment mode. These fixed codes are display-only delivery codes, not payment proof or API redemption credentials. The signed server-side entitlement remains authoritative. Refresh the account page if Stripe's webhook has not arrived yet.
+The code delivery page is not a unique or revocable entitlement system. Shared codes can be copied and reused by anyone who knows them. The supplied app documentation specifically warned that the supplied Theme Pack code was rejected by its existing app API; the app itself must be checked/updated separately before live sales.

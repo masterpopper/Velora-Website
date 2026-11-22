@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "velora-website",
+  "main": "worker/index.mjs",
+  "compatibility_date": "2026-11-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": "./dist", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "velora-purchases-test", "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_UUID" }
+  ],
+  "vars": {
+    "SITE_ORIGIN": "https://velora-website.cloudflare-mtoth.workers.dev",
+    "PAYMENTS_MODE": "test",
+    "PURCHASES_ENABLED": "false",
+    "LIVE_PAYMENTS_APPROVED": "false",
+    "STRIPE_ACCOUNT_ID": "acct_REPLACE_WITH_VELORA_ACCOUNT_ID",
+    "PLUS_PRODUCT_ID": "prod_REPLACE_WITH_TEST_PLUS_PRODUCT",
+    "PLUS_PRICE_ID": "price_REPLACE_WITH_TEST_PLUS_PRICE",
+    "THEME_PRODUCT_ID": "prod_REPLACE_WITH_TEST_THEME_PRODUCT",
+    "THEME_PRICE_ID": "price_REPLACE_WITH_TEST_THEME_PRICE"
+  }
+}

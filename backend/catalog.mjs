@@ -2,7 +2,7 @@ import { assert } from './security.mjs';
 export function catalog(env) {
   return {
     plus:{sku:'plus',name:'Plus',amount:1000,currency:'usd',price:env.PLUS_PRICE_ID,product:env.PLUS_PRODUCT_ID},
-    theme_pack:{sku:'theme_pack',name:'Theme Pack + Donation',amount:500,currency:'usd',price:env.THEME_PRICE_ID,product:env.THEME_PRODUCT_ID}
+    theme_pack:{sku:'theme_pack',name:'Theme Pack',amount:500,currency:'usd',price:env.THEME_PRICE_ID,product:env.THEME_PRODUCT_ID}
   };
 }
 export function validatePrice(price, item,live=false) {
@@ -14,7 +14,7 @@ export function validatePrice(price, item,live=false) {
 export function validateSession(session, lines, order) {
   assert(session.id===order.session_id && session.mode==='payment' && session.livemode===(order.mode==='live') &&
     session.client_reference_id===order.id && session.metadata?.order_id===order.id &&
-    session.metadata?.account_id===order.account_id && session.metadata?.sku===order.sku &&
+    !session.metadata?.account_id && session.metadata?.sku===order.sku &&
     session.currency==='usd' && session.amount_total===order.amount && session.amount_subtotal===order.amount &&
     (session.total_details?.amount_discount||0)===0 && (session.total_details?.amount_tax||0)===0 &&
     lines.length===1 && lines[0].quantity===1 && lines[0].price?.id===order.price_id &&
