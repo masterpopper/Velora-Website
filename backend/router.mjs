@@ -1,6 +1,7 @@
 import {assert,HttpError,json,origin,sameOrigin,body,rate} from './security.mjs';
 import {checkout,webhook,purchaseStatus} from './payments.mjs';
 import {catalog} from './catalog.mjs';
+import {safeProviderError} from './provider-errors.mjs';
 
 export async function handle(request,bindings) {
   const env={...bindings,DB:bindings.DB?.withSession?bindings.DB.withSession('first-primary'):bindings.DB};
@@ -30,6 +31,8 @@ export async function handle(request,bindings) {
     }
     throw new HttpError(404,'not_found');
   }catch(error) {
-    return json({error:error instanceof HttpError?error.message:'service_unavailable'},error instanceof HttpError?error.status:503);
+    if(error instanceof HttpError) return json({error:error.message},error.status);
+    const failure=safeProviderError(error);
+    return json(failure.body,failure.status);
   }
 }
