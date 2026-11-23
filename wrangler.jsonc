@@ -21,7 +21,7 @@
     }
   ],
   "vars": {
-    "SITE_ORIGIN": "https://velora-website.cloudflare-mtoth.workers.dev",
+    "SITE_ORIGIN": "https://veloratv.app",
     "PAYMENTS_MODE": "live",
     "PURCHASES_ENABLED": "true",
     "LIVE_PAYMENTS_APPROVED": "true",
