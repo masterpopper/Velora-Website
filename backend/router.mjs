@@ -10,8 +10,15 @@ export async function handle(request,bindings) {
     assert(url.origin===origin(env),403,'host_rejected');
     const ip=request.headers.get('CF-Connecting-IP')||'local';
     if(path==='/api/stripe/webhook' && request.method==='POST') return json(await webhook(request,env));
-    if(path==='/api/config' && request.method==='GET') return json({mode:env.PAYMENTS_MODE||'unconfigured',enabled:env.PURCHASES_ENABLED==='true'&&(env.PAYMENTS_MODE==='test'||env.PAYMENTS_MODE==='live'&&env.LIVE_PAYMENTS_APPROVED==='true'),
-      products:Object.values(catalog(env)).map(({sku,name,amount,currency})=>({sku,name,amount,currency}))});
+   if(path==='/api/config' && request.method==='GET') {
+  const keyPrefix=(env.STRIPE_SECRET_KEY||'').trim().match(/^(sk|rk)_(live|test)_/)?.[0] || 'missing_or_unrecognized';
+  return json({
+    mode:env.PAYMENTS_MODE||'unconfigured',
+    enabled:env.PURCHASES_ENABLED==='true'&&(env.PAYMENTS_MODE==='test'||env.PAYMENTS_MODE==='live'&&env.LIVE_PAYMENTS_APPROVED==='true'),
+    stripeKeyPrefix:keyPrefix,
+    products:Object.values(catalog(env)).map(({sku,name,amount,currency})=>({sku,name,amount,currency}))
+  });
+}
     if(path==='/api/purchase/status' && request.method==='GET') {
       await rate(env,'status:'+ip,60,60);
       return json(await purchaseStatus(env,url.searchParams.get('session_id')));
