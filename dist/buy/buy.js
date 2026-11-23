@@ -20,17 +20,24 @@ async function checkSession(sessionId){
   $('#receipt').hidden=false;
   $('#receipt-title').textContent='Checking your payment…';
   $('#receipt-message').textContent='Waiting for Stripe to confirm your payment. This can take a few seconds.';
+  let lastError=null;
   for(let attempt=0;attempt<18;attempt++){
     try{
       const result=await api('/purchase/status?session_id='+encodeURIComponent(sessionId));
+      lastError=null;
       if(result.status==='paid'&&['plus','theme_pack'].includes(result.sku)&&typeof result.code==='string'){showDelivery(result.sku,result.code);return;}
       if(['failed','expired','suspended','revoked'].includes(result.status)){
         $('#receipt-title').textContent='Payment not eligible for code delivery';
         $('#receipt-message').textContent='The payment is '+result.status+'. Contact Velora support if you believe this is incorrect.';
         return;
       }
-    }catch(error){$('#receipt-message').textContent=error.message;}
+    }catch(error){lastError=error.message;$('#receipt-message').textContent='Unable to verify payment: '+error.message+'. Do not pay again.';}
     await new Promise(resolve=>setTimeout(resolve,2500));
+  }
+  if(lastError){
+    $('#receipt-title').textContent='Payment verification needs attention';
+    $('#receipt-message').textContent='Unable to verify payment: '+lastError+'. Do not pay again. Use Check payment again or contact Velora support with this error.';
+    return;
   }
   $('#receipt-title').textContent='Payment is still processing';
   $('#receipt-message').textContent='Stripe has not confirmed the payment yet. Use “Check payment again” in a moment. Your code will appear automatically after confirmation.';

@@ -46,11 +46,24 @@ export async function checkout(env,sku,requestId,client) {
   return {url:session.url,order_id:order.id};
 }
 
-export async function purchaseStatus(env,sessionId) {
+export async function purchaseStatus(env,sessionId,client) {
   assert(typeof sessionId==='string' && /^cs_(test|live)_[A-Za-z0-9_]+$/.test(sessionId),400,'invalid_checkout_session');
-  const order=await env.DB.prepare('SELECT sku,state,mode FROM orders WHERE session_id=?').bind(sessionId).first();
+  let order=await env.DB.prepare('SELECT * FROM orders WHERE session_id=?').bind(sessionId).first();
   if(!order) return {status:'pending'};
-  if(order.mode!==env.PAYMENTS_MODE) return {status:'pending'};
+  if(order.mode!==paymentMode(env).name) return {status:'pending'};
+  // A missing/delayed webhook must not strand a paid buyer. Never trust the
+  // redirect: reconcile CURRENT Stripe resources using the server-only key.
+  // Reuse the webhook's validation and lock; throttle repeated receipt polling.
+  if(!['revoked','expired'].includes(order.state) && order.updated_at<=now()-15) {
+    const stripe=client||stripeClient(env);
+    await assertStripeAccount(stripe,env);
+    try { await reconcileOrder(env,stripe,order); }
+    catch(error) {
+      if(!(error instanceof HttpError && error.message==='order_busy_retry')) throw error;
+    }
+    order=await env.DB.prepare('SELECT * FROM orders WHERE session_id=?').bind(sessionId).first();
+    assert(order,503,'order_unavailable');
+  }
   if(order.state==='active') {
     const code=order.sku==='plus'?env.PLUS_DELIVERY_CODE:env.THEME_DELIVERY_CODE;
     assert(typeof code==='string' && /^\d{6,12}$/.test(code),503,'delivery_codes_not_configured');
@@ -107,15 +120,26 @@ export async function processEvent(env,stripe,event) {
   const order=await findOrder(env,stripe,event);
   if(!order) return {ignored:true}; // Not a Velora order: metadata alone never creates a delivery code.
   assert(order.stripe_account===env.STRIPE_ACCOUNT_ID && order.mode===mode.name,409,'order_account_mismatch');
+  return reconcileOrder(env,stripe,order,event);
+}
+// Shared by signed webhooks and receipt recovery. No browser-supplied payment
+// state, SKU, price or metadata is used to grant a code.
+async function reconcileOrder(env,stripe,order,event=null) {
+  const mode=paymentMode(env);
+  const item=catalog(env)[order.sku];
+  assert(item && order.stripe_account===env.STRIPE_ACCOUNT_ID && order.mode===mode.name &&
+    order.price_id===item.price && order.product_id===item.product && order.amount===item.amount &&
+    order.currency===item.currency,409,'order_configuration_mismatch');
   const lock=token();
   const acquired=await env.DB.prepare('UPDATE orders SET lock_token=?,lock_until=? WHERE id=? AND lock_until<? RETURNING id')
     .bind(lock,now()+300,order.id,now()).first();
   assert(acquired,503,'order_busy_retry');
   try {
     let sessionId=order.session_id;
-    if(!sessionId && event.type.startsWith('checkout.session.')) sessionId=event.data.object.id;
+    if(!sessionId && event?.type.startsWith('checkout.session.')) sessionId=event.data.object.id;
     assert(sessionId,503,'checkout_binding_pending');
     const session=await stripe.checkout.sessions.retrieve(sessionId);
+    assert(!order.payment_intent || objectId(session.payment_intent)===order.payment_intent,409,'payment_intent_mismatch');
     const lines=await stripe.checkout.sessions.listLineItems(sessionId,{limit:2});
     validateSession(session,lines.data,{...order,session_id:sessionId});
     assert(!lines.has_more,409,'unexpected_line_items');
@@ -131,15 +155,17 @@ export async function processEvent(env,stripe,event) {
       }
     }
     const state=paymentState(session,intent,refunds,disputes);
-    await env.DB.batch([
+    const updates=[
       env.DB.prepare(`UPDATE orders SET session_id=?,payment_intent=?,state=?,reason=?,updated_at=?
         WHERE id=? AND lock_token=?`).bind(sessionId,intent?.id||null,state.state,state.reason,now(),order.id,lock),
-      env.DB.prepare(`INSERT OR IGNORE INTO webhook_events(id,order_id,type,processed_at)
-        SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND lock_token=?)`)
-        .bind(event.id,order.id,event.type,now(),order.id,lock),
-      env.DB.prepare('UPDATE orders SET lock_until=0,lock_token=NULL WHERE id=? AND lock_token=?').bind(order.id,lock)
-    ]);
-    assert(await env.DB.prepare('SELECT id FROM webhook_events WHERE id=?').bind(event.id).first(),503,'order_lock_lost');
+    ];
+    if(event) updates.push(env.DB.prepare(`INSERT OR IGNORE INTO webhook_events(id,order_id,type,processed_at)
+      SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND lock_token=?)`)
+      .bind(event.id,order.id,event.type,now(),order.id,lock));
+    updates.push(env.DB.prepare('UPDATE orders SET lock_until=0,lock_token=NULL WHERE id=? AND lock_token=?').bind(order.id,lock));
+    const results=await env.DB.batch(updates);
+    assert(results[0]?.meta?.changes===1,503,'order_lock_lost');
+    if(event) assert(await env.DB.prepare('SELECT id FROM webhook_events WHERE id=?').bind(event.id).first(),503,'order_lock_lost');
     return {received:true};
   }finally {
     await env.DB.prepare('UPDATE orders SET lock_until=0,lock_token=NULL WHERE id=? AND lock_token=?').bind(order.id,lock).run();

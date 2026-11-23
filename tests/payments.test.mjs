@@ -7,7 +7,7 @@ import {catalog,validatePrice,validateSession,paymentState} from '../backend/cat
 const stored=async f=>f.DB.prepare('SELECT * FROM orders WHERE id=?').bind('order').first();
 
 test('verified paid checkout delivers the configured code only after webhook confirmation',async()=>{
- const f=await fixture();assert.deepEqual(await purchaseStatus(f.env,'cs_test_1'),{status:'pending'});
+ const f=await fixture();await f.DB.prepare('UPDATE orders SET updated_at=?').bind(Math.floor(Date.now()/1000)).run();assert.deepEqual(await purchaseStatus(f.env,'cs_test_1'),{status:'pending'});
  await processEvent(f.env,f.stripe,f.event());assert.equal((await stored(f)).state,'active');
  assert.deepEqual(await purchaseStatus(f.env,'cs_test_1'),{status:'paid',sku:'plus',code:'654321'});
 });
@@ -67,6 +67,7 @@ test('disabled checkout never calls Stripe',async()=>{
 test('guest checkout has no account identity and is idempotent for the same request ID',async()=>{
  const f=await fixture();await f.DB.prepare('DELETE FROM orders').run();let createCount=0;
  f.stripe.checkout.sessions.create=async(data)=>{createCount++;assert.equal(data.metadata.account_id,undefined);assert.match(data.success_url,/session_id=\{CHECKOUT_SESSION_ID\}/);return {id:'cs_test_guest',url:'https://checkout.stripe.com/c/pay/guest'};};
+ f.stripe.prices.retrieve=async()=>({...f.price,id:'price_theme',product:'prod_theme',unit_amount:500});
  const requestId=crypto.randomUUID();const a=await checkout(f.env,'theme_pack',requestId,f.stripe);
  const b=await checkout(f.env,'theme_pack',requestId,f.stripe);assert.equal(a.order_id,b.order_id);assert.equal(createCount,1);
  const order=await f.DB.prepare('SELECT * FROM orders WHERE id=?').bind(a.order_id).first();assert.equal(order.sku,'theme_pack');
