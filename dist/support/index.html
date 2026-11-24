@@ -1,58 +1,15 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#101114">
-  <meta name="description" content="Contact Velora support. Describe an issue or share feedback, then review and submit it on GitHub.">
-  <title>Contact support — Velora</title>
-  <link rel="stylesheet" href="/style.css?v=2">
-  <link rel="stylesheet" href="/support/support.css">
-</head>
-<body>
-  <a class="skip" href="#main">Skip to content</a>
-  <header><div class="nav container"><a class="brand" href="/" aria-label="Velora home"><img src="/assets/logo.png" alt=""><span>Velora</span></a><a class="support-home" href="/">← Back to website</a></div></header>
-  <main id="main" class="support-main container">
-    <div class="eyebrow">CONTACT SUPPORT</div>
-    <h1>Tell us what’s happening.</h1>
-    <p class="support-intro">Report a problem or share an idea from your phone or computer. No need to type a report on your TV.</p>
-    <div class="support-address">You’re in the right place: <strong>veloratv.app/support</strong></div>
-    <div class="support-layout">
-      <section class="feedback-card" aria-labelledby="feedback-heading">
-        <h2 id="feedback-heading">Your feedback</h2>
-        <p class="form-intro">Start with a title and a description. You’ll review your report on GitHub before submitting it.</p>
-        <form action="https://github.com/masterpopper/reform/issues/new" method="get" target="_blank" rel="noopener" id="feedback-form">
-          <label for="feedback-title">Title</label>
-          <input id="feedback-title" name="title" type="text" maxlength="120" required placeholder="For example: Live TV closes when I change channels" autocomplete="off">
-          <label for="feedback-description">Description</label>
-          <p class="field-hint" id="description-hint">What happened, and what did you expect? For a problem, include your device, Velora version and steps to reproduce it.</p>
-          <textarea id="feedback-description" name="body" rows="9" maxlength="1200" required aria-describedby="description-hint" placeholder="Device and Velora version:
-
-What happened:
-
-Steps to reproduce:
-
-What I expected:"></textarea>
-          <div class="public-notice"><strong>GitHub sign-in is required.</strong> Submitted reports are public and linked to your GitHub account. Don’t include passwords, private stream links, email addresses or other personal information.</div>
-          <button class="button" type="submit">Review on GitHub <span aria-hidden="true">↗</span></button>
-          <p class="review-note">Opens a prefilled issue in a new tab. Nothing is posted until you submit it on GitHub.</p>
-        </form>
-      </section>
-      <aside class="support-aside" aria-label="Support guidance">
-        <h2>Before you send</h2>
-        <p>A specific example helps us understand the problem. Mention the section you were using, the button you pressed, and any error message.</p>
-        <a href="https://github.com/masterpopper/reform/issues" target="_blank" rel="noopener">Browse existing reports ↗</a>
-        <div class="support-divider"></div>
-        <h2>Having trouble with a stream?</h2>
-        <p>Try another available source for the same event. External providers determine availability, so a stream may be unavailable even when the app is working.</p>
-        <div class="support-divider"></div>
-        <h2>Need the latest version?</h2>
-        <p>Check the official public release notes and available APKs.</p>
-        <a href="https://github.com/masterpopper/reform/releases" target="_blank" rel="noopener">Open GitHub releases ↗</a>
-      </aside>
-    </div>
-  </main>
-  <footer class="container"><div class="footer-bottom"><span>© 2026 Velora · veloratv.app</span><a href="/">Velora home</a><a href="https://buymeacoffee.com/Masterpopper" target="_blank" rel="noopener">Support the project ↗</a></div></footer>
-  <script src="/support/support.js"></script>
-</body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101114"><meta name="description" content="Contact Velora support by email for purchase and activation help."><title>Contact support — Velora</title><link rel="stylesheet" href="/style.css?v=2"><link rel="stylesheet" href="/support/support.css?v=3"></head>
+<body><a class="skip" href="#main">Skip to content</a>
+<header><div class="nav container"><a class="brand" href="/buy" aria-label="Velora purchases"><img src="/assets/logo.png" alt=""><span>Velora</span></a><a class="support-home" href="/buy">Back to purchases</a></div></header>
+<main id="main" class="support-main container">
+<div class="eyebrow">CONTACT SUPPORT</div><h1>Tell us what’s happening.</h1>
+<p class="support-intro">Have a question or need a hand? Write your message below and send it directly to Velora support.</p>
+<div class="support-layout"><section class="feedback-card" aria-labelledby="feedback-heading"><h2 id="feedback-heading">Your message</h2><p class="form-intro">A title and a few details are all you need.</p>
+<form action="mailto:support@veloratv.app" method="get" id="feedback-form">
+<label for="feedback-title">Title</label><input id="feedback-title" name="subject" type="text" maxlength="120" required placeholder="What can we help with?" autocomplete="off">
+<label for="feedback-description">Description</label><p class="field-hint" id="description-hint">Tell us what happened and include any error message.</p><textarea id="feedback-description" name="body" rows="7" maxlength="1200" required aria-describedby="description-hint" placeholder="Describe your question or problem here."></textarea>
+<div class="public-notice">Don’t include passwords, activation codes or full payment card details.</div>
+<button class="button" type="submit">Continue to email</button><p class="review-note" id="email-status" role="status" aria-live="polite">Opens a draft in your email app. Review it and press Send there.</p></form></section>
+<aside class="support-aside" aria-label="Support guidance"><h2>Prefer to email directly?</h2><p>You can always reach us at</p><a class="email-address" href="mailto:support@veloratv.app">support@veloratv.app</a><div class="support-divider"></div><h2>A few details help.</h2><p>For purchase questions, include your order reference. For activation help, tell us which upgrade you’re trying to activate and the error you see.</p></aside></div>
+</main><footer class="container"><div class="footer-bottom"><span>© 2026 Velora · veloratv.app</span><a href="/buy">Back to purchases</a></div></footer><script src="/support/support.js?v=3"></script></body></html>
